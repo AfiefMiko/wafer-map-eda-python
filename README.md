@@ -105,5 +105,3 @@ Rather than using arbitrary round numbers, natural breakpoints in the data were 
 
 ### 4. Visual Validation
 An 8-panel gallery was generated using `seaborn.heatmap` to visually confirm that the numerical flags align with the physical defect patterns on the wafer maps. 
-
-*(See `defect_gallery_validation.png` in the `/results` directory for the visual proof).*
