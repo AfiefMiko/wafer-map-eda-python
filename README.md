@@ -94,7 +94,7 @@ To distinguish edge patterns from center patterns, a radial distance approach wa
 **Design Limitation - The "Donut" Asymmetry**:
 A geometric asymmetry was discovered. A linear threshold of `0.5` effectively assigns ~25% of the wafer's area to the "Center" zone and ~75% to the "Edge" zone (due to $Area = \pi r^2$). Because a "Donut" defect sits at a median radius, its defects fall largely into the smaller "Center" zone, making it statistically resemble a "Center" defect. This is documented as a limitation of the 2-zone binary split and would require a 3-zone approach (Inner Core, Middle Ring, Outer Edge) to resolve perfectly.
 
-### 3. Pattern Flagging (Data-Driven Thresholds)
+### 3. Pattern Flagging (Data Driven Thresholds)
 Rather than using arbitrary round numbers, natural breakpoints in the data were identified by calculating the gaps between category means and finding the midpoint between the 3rd Quartile (Q3) of the lower group and the 1st Quartile (Q1) of the upper group.
 
 | Flag | Threshold | Mathematical Basis | Agreement Rate |
