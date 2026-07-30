@@ -6,7 +6,7 @@ My implementation of EDA on WM-811K wafer map dataset and defect pattern analysi
 ## Dataset
 - Sumber: Kaggle (qingyi/wm811k-wafer-map), asli dari MIR Lab
 - 811,457 wafer map, ~20% berlabel pola defect
-- Sample kerja: 1000 baris (random_state=42)
+- Sample awal 1000 baris (`random_state=42`) dipakai untuk eksplorasi first-look di Day 1. Sejak Day 2, seluruh analisis dilakukan di dataset penuh (811,457 baris raw → 809,424 baris setelah filter reliability, lihat bagian Feature Engineering)
 
 ## Kolom dan tipe datanya
 waferMap         object
@@ -18,8 +18,8 @@ failureType       object
 
 ## Status
 ### Day 1/5 — Setup & data loading selesai
-### Day 2/5 — Cleaning selesai
-### Day 12/13 — Feature Engineering & Pattern Validation selesai
+### Day 2/5 — Cleaning & feature engineering selesai
+### Day 3/5 — Group operations & statistical analysis selesai
 
 ---
 
@@ -55,7 +55,7 @@ What looks like one homogeneous "none" category in `failureType` is actually **t
 The first two groups both show up as `failureType = 'none'`, but one has simply never been inspected, while the other has been inspected and passed. Treating them as the same thing erases a meaningful distinction in the data.
 
 ### Design Decision: Sampling Strategy
-This distinction is the direct basis for the `stratify_key` used in this project's sampling approach (see `day12_stratified_sampling.py`). Rather than lumping every `failureType == 'none'` row into one stratum, `unlabeled` and `reviewed_no_defect` are kept as two separate strata — preserving the inspection-status information that the raw label alone throws away.
+This distinction is the direct basis for the `stratify_key` used in this project's sampling approach (see `01_project_setup.ipynb`). Rather than lumping every `failureType == 'none'` row into one stratum, `unlabeled` and `reviewed_no_defect` are kept as two separate strata — preserving the inspection-status information that the raw label alone throws away. In practice, the per-category cap ended up higher than any single category's size, so no category was actually downsampled — every row carries forward, and the composite key serves as stratification bookkeeping rather than a mechanism to shrink the dataset.
 
 ### Design Decision: Defect Rate Calculation
 The choice of denominator matters more than it looks:
@@ -72,7 +72,7 @@ Every per-category count above (Center: 4,294, Donut: 555, Edge-Loc: 5,189, Edge
 
 ---
 
-## Feature Engineering & Pattern Validation (Day 12)
+## Feature Engineering & Pattern Validation (Day 2/5)
 
 To transition from visual inspection to quantitative analysis, defect density features were engineered directly from the 2D `waferMap` arrays across all 811,457 rows.
 
@@ -104,4 +104,45 @@ Rather than using arbitrary round numbers, natural breakpoints in the data were 
 | `is_globally_dense` | `>= 0.6752` | Midpoint of Q3 `Random` (0.59) and Q1 `Near-full` (0.76) | **Near-full: 100%** |
 
 ### 4. Visual Validation
-An 8-panel gallery was generated using `seaborn.heatmap` to visually confirm that the numerical flags align with the physical defect patterns on the wafer maps. 
+An 8-panel gallery was generated using `seaborn.heatmap` to visually confirm that the numerical flags align with the physical defect patterns on the wafer maps.
+
+A reliability filter (`dieSize >= 80` and `fill_ratio >= 0.3`) was also applied at this stage, producing `df_reliable` — 809,424 of the 811,457 rows (2,033 wafers excluded for having too few valid dies to compute density meaningfully). All Day 3 analysis below builds on `df_reliable`, not the raw 811,457-row set, so figures in this section and the next aren't always directly comparable.
+
+---
+
+## Group Operations & Statistical Analysis (Day 3/5)
+
+Building on `df_reliable` (809,424 rows), this phase applied `groupby`-based aggregation, custom split-apply-combine functions, and correlation analysis to consolidate and extend the Day 2 findings.
+
+### 1. Consolidated Pivot Table
+A single `pd.pivot_table()` (`index='failureType_clean'`, four density metrics as `values`, `aggfunc=['mean','count']`, `margins=True`) consolidated metrics that were previously scattered across several cells. Every value cross-validated exactly against its structural definition (`edge_center_diff = density_edge - density_center` held precisely for every category).
+
+| Category | edge_center_diff | Interpretation |
+|---|---:|---|
+| Donut | -0.195 | Most center-heavy |
+| Edge-Ring | +0.199 | Most edge-heavy |
+| Near-full | -0.046 | Near-zero — uniformly dense, not lopsided to either zone |
+| none | +0.046 | Baseline, near-neutral |
+
+**dieSize interaction (new limitation found)**: A second pivot (`columns='dieSize_binned'`) showed `density_global` decreasing systematically as `dieSize` increases, holding for 6 of 9 categories with reliable sample sizes — most convincingly for `none` (n=196K–373K per bin). This means part of the density difference observed between defect categories is entangled with wafer die-grid size, not purely the defect pattern itself.
+
+### 2. Custom Group-Wise Functions (`groupby().apply()`)
+Two custom functions were applied via `.groupby(..., observed=True).apply(fn, include_groups=False)`:
+
+- **`top_n_density`** — top-3 highest-density wafers per category, as candidates for the Day 4 visual gallery.
+- **`quantile_summary` + `find_split_threshold`** — a generalized, reusable reimplementation of the manual Q1/Q3 threshold derivation from Day 2. All three original thresholds (`THRESHOLD_CENTER`, `THRESHOLD_EDGE`, `THRESHOLD_DENSE`) were reproduced to 4 decimal places exactly, confirming the manual derivation and making the method reusable for future metrics.
+
+**Anomaly found**: the top-3 `density_global` wafers in the `none` category all showed `density_global = 1.0`. Investigation traced these to the `unlabeled` stratum (never manually reviewed) rather than `reviewed_no_defect` — consistent with the "Double None" finding above, not a data quality bug.
+
+**Design note**: `.groupby().apply()` was deliberately avoided for the Day 1 stratified sampling step (a manual loop was used instead) because newer pandas versions exclude the grouping column from what's passed into the applied function when the function body needs it. The two functions above were designed around that limitation by never referencing the grouping column internally.
+
+### 3. Feature Correlation Analysis
+A Pearson correlation matrix was computed across 8 numeric features (`dieSize`, `fill_ratio`, `density_global`, `density_center`, `density_edge`, `edge_center_diff`, `center_row`, `center_col`); `waferIndex` (non-informative ID) and `total_cells` (exact duplicate of `dieSize`, r=1.00) were excluded.
+
+- **`density_global` is largely redundant** with `density_center` (r=0.97) and `density_edge` (r=0.97) — it carries little independent information beyond the two regional metrics.
+- **`dieSize` vs `density_global`: r=-0.23** — quantifies the confounding pattern found in the pivot table above.
+- **`density_edge` vs `edge_center_diff`: r=0.54** — partially structural, since `edge_center_diff` is derived from `density_edge` by definition, not a purely empirical relationship.
+
+**Implication for Day 4+**: given the redundancy, feature selection for visualization/modeling should likely prioritize `density_center` + `density_edge` (or `edge_center_diff`) over `density_global`, and should treat `dieSize` as a covariate when comparing density across categories.
+
+**Output**: `03_groupby_aggregation.ipynb`
