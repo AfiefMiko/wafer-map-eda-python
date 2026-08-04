@@ -1,0 +1,18 @@
+# Wafer Map EDA - Python dependencies
+# Versions pinned exactly to the verified working environment (Windows, VS Code).
+
+pandas==3.0.5
+numpy==2.5.1
+matplotlib==3.11.1
+seaborn==0.13.2
+
+# Note: src/data_loader.py includes a compatibility shim
+# (sys.modules['pandas.indexes']) to read the raw WM-811K pickle
+# (LSWMD.pkl), which was pickled with an older pandas internal structure.
+# This shim is still required regardless of the modern pandas version
+# above -- do not remove it from data_loader.py even after upgrading pandas.
+
+# Notebook environment (clone-install-run without assuming VS Code's
+# built-in Jupyter integration is used).
+jupyter==1.1.1
+ipykernel==7.3.0
