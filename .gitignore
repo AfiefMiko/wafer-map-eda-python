@@ -221,3 +221,4 @@ venv/
 data/*.pkl
 .ipynb_checkpoints/
 __pycache__/
+.jupyterlab-workspace/
