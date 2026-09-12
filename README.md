@@ -20,6 +20,8 @@ failureType       object
 ### Day 1/5 — Setup & data loading selesai
 ### Day 2/5 — Cleaning & feature engineering selesai
 ### Day 3/5 — Group operations & statistical analysis selesai
+### Day 4/5 — Visualization & refactor selesai
+### Day 5/5 — Documentation & wrap-up selesai
 
 ---
 
@@ -146,3 +148,47 @@ A Pearson correlation matrix was computed across 8 numeric features (`dieSize`, 
 **Implication for Day 4+**: given the redundancy, feature selection for visualization/modeling should likely prioritize `density_center` + `density_edge` (or `edge_center_diff`) over `density_global`, and should treat `dieSize` as a covariate when comparing density across categories.
 
 **Output**: `03_groupby_aggregation.ipynb`
+
+---
+
+## Visualization & Key Findings (Day 4/5)
+
+Building on `df_reliable` (809,424 rows) and the tables/thresholds derived in Day 3, this phase turned those numbers into charts and moved every plotting routine out of the notebooks into `src/visualizer.py`, matching the `data_loader.py` / `features.py` / `analyzer.py` split already in place.
+
+### 1. Defect Gallery
+An 8-panel gallery (one wafer per category, selected by highest `density_global` via `analyzer.get_top_n_per_category()`) confirms that the numerical flags line up with the physical patterns on the wafer maps — a reproducible, top-N-based successor to the random-sample gallery from Day 2.
+
+### 2. dieSize × Category Interaction
+A heatmap of mean `density_global` across `failureType_clean` × `dieSize_binned` gives the Day 3 confounding finding (`dieSize` vs `density_global`, r=-0.23) a visual form. 2 of 27 cells were masked for having fewer than 30 rows (`Donut`/`kecil`: n=17, `Near-full`/`besar`: n=2) — both from the two smallest categories overall (555 and 149 wafers respectively), not a data issue.
+
+### 3. Threshold Validation via Distribution
+Boxplots of `edge_center_diff` and `density_global` per category, with the Day 2 thresholds overlaid as reference lines, visually confirm every Agreement Rate figure in the Day 2 table: `Donut`'s Q3 sits almost exactly on `THRESHOLD_CENTER`, `Near-full` only grazes it at Q1 (consistent with 73.0% vs 27.5%); `Edge-Ring` sits entirely above `THRESHOLD_EDGE` while `Edge-Loc`'s Q1 dips below it (97.7% vs 79.6%); `Random`'s Q3 lands right at `THRESHOLD_DENSE`, by construction, while `Near-full` separates completely above it (100%).
+
+**Naming caveat found**: `is_center_heavy`'s threshold is derived from the gap between `Donut` and `Near-full`, not from the `Center` category. Visually, `Center`'s median `edge_center_diff` sits close to zero, nowhere near the threshold — so the flag should not be read as "detects Center-labeled wafers."
+
+**Severity vs. location, visually**: `density_global` and `edge_center_diff` rank categories differently — e.g. `Random` sits mid-pack on `edge_center_diff` but 2nd-highest on `density_global`. This is the visual counterpart to the Day 3 finding that `density_global` is largely redundant with the regional metrics (r=0.97): it captures *how severe*, while `edge_center_diff` captures *where* — two different axes, not the same one restated.
+
+### 4. Defect Rate: Denominator Choice
+A bar chart of the naive (`3.14%`) vs. corrected (`14.76%`) defect rate gives the "Double None" finding from the Data Quality section a direct visual.
+
+### 5. Refactor
+All plotting code (previously inline per notebook cell) now lives in `src/visualizer.py` as four reusable functions (`plot_defect_gallery`, `plot_size_interaction`, `plot_distribution_by_category`, `plot_defect_rate_comparison`), completing the module split started in Day 2-3. Notebooks now call one function per chart instead of repeating plotting boilerplate.
+
+**Output**: `04_defect_gallery.ipynb`, `src/visualizer.py`, `assets/defect_gallery.png`, `assets/size_interaction_heatmap.png`, `assets/edge_center_diff_boxplot.png`, `assets/density_global_boxplot.png`, `assets/defect_rate_comparison.png`
+
+---
+
+## Limitations & Next Steps
+
+### Known Limitations
+1. **2-zone radial split (Center/Edge) creates a Donut/Center confusion** (Day 2) a `Donut` defect sits at median radius, so under a linear `<= 0.5` split it statistically resembles `Center` (the split allocates ~25% of a wafer's area to Center vs ~75% to Edge, since `Area = πr²`). A 3-zone split (Inner Core / Middle Ring / Outer Edge) would resolve this, but wasn't implemented here.
+2. **`dieSize` confounds `density_global`** (Day 3, r=-0.23; visualized Day 4/5) category-level density comparisons in this project don't control for wafer die-grid size, so part of the observed spread reflects `dieSize`, not purely the defect pattern.
+3. **Flag names don't always match their derivation** (Day 4/5) `is_center_heavy`'s threshold comes from the `Donut`/`Near-full` gap, not from the `Center` category itself. Anyone reusing these flags should re-derive thresholds against their own reference categories rather than assume the name matches the label.
+4. **Small-sample cells in cross-tabulated views**  e.g. `Donut` × `kecil` (n=17) and `Near-full` × `besar` (n=2) in the Day 4/5 size-interaction heatmap. `Donut` (555 wafers) and `Near-full` (149 wafers) are rare enough overall that further cross-tabulation splits them into unreliable cell sizes.
+5. **`density_global` is largely redundant with the regional metrics** (Day 3, r=0.97)  it adds little independent signal once `density_center`/`density_edge` are available.
+
+### Next Steps
+- Implement a 3-zone radial split (Inner Core / Middle Ring / Outer Edge) to resolve the Donut/Center ambiguity above.
+- Treat `dieSize` as a covariate (e.g. partial correlation, or bin-normalized density) instead of only flagging it as a confound.
+- For any future modeling, prioritize `density_center` + `density_edge` (or `edge_center_diff`) over `density_global`, per the Day 3 finding.
+- The validated engineered features (`density_center`, `density_edge`, `edge_center_diff`, pattern flags) are a reasonable input set for a defect-pattern classifier, the natural next phase beyond this EDA project.
